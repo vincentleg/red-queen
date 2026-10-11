@@ -78,3 +78,43 @@ footer { min-height: 76px; display: flex; align-items: center; justify-content: 
 .ai-thinking { font-size: 10px; color: #ff98a4; letter-spacing: 1.2px; margin: 0 0 16px; display: flex; align-items: center; gap: 10px; }.ai-thinking i { width: 7px; height: 7px; border-radius: 50%; background: #ec2448; box-shadow: 0 0 10px #ec2448; animation: rq-pulse 1s ease-in-out infinite; }
 @keyframes rq-pulse { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .ai-thinking i { animation: none; } }
+
+/* Interactive proof and recorded-event presentation keep the chamber's original palette. */
+.lab-button { padding: 13px 17px; min-height: 44px; border: 1px solid #a43e58; border-radius: 2px; background: #571c2c; color: #ffe1e9; font: 11px var(--font-mono); letter-spacing: .8px; cursor: pointer; }
+.lab-button.secondary { background: #171019; border-color: #55303f; color: #d6b5c2; }
+.lab-button:hover:not(:disabled) { border-color: #ff8ba4; background: #74243b; }
+.lab-button:disabled { opacity: .45; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #ff98a4; outline-offset: 4px; }
+.playback-panel, .attack-lab { padding: 32px 0; border-top: 1px solid var(--line); }
+.stage-title { font-weight: 400; font-size: clamp(20px, 2.3vw, 32px); color: #f3ced8; margin: 22px 0 12px; animation: stage-enter .4s ease-out; }
+.stage-detail { font-size: 11px; color: #b09ca9; }
+.playback-controls, .attack-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 22px 0; }
+.timeline-slider { display: flex; flex-direction: column; gap: 8px; color: #bda5b2; font: 11px var(--font-mono); min-width: 180px; flex: 1; }
+.timeline-slider input { width: 100%; accent-color: #ef5676; min-height: 24px; }
+.timeline-steps { display: flex; gap: 8px; overflow-x: auto; padding: 8px 2px 16px; }
+.timeline-steps button { flex: 0 0 140px; background: #100d13; border: 1px solid #39232e; padding: 12px; color: #aa929e; font: 10px/1.5 var(--font-mono); text-align: left; cursor: pointer; }
+.timeline-steps button span { display: block; color: #d56983; margin-bottom: 8px; }
+.timeline-steps .visited { border-color: #803044; color: #e2becb; }.timeline-steps [aria-current] { background: #3b1724; border-color: #f16988; }
+.attack-lab h2 { font-size: clamp(23px, 2.8vw, 38px); font-weight: 400; letter-spacing: -.8px; margin: 12px 0; }
+.attack-lab .eyebrow { margin-bottom: 10px; }.attack-intro { color: #c7b1bf; font-size: 16px; }
+.attack-controls label { display: flex; flex-direction: column; gap: 9px; color: #b8a3af; font: 12px var(--font-mono); flex: 1; min-width: 220px; }
+.attack-controls select { min-height: 44px; padding: 10px; background: #171019; border: 1px solid #593040; color: #f0d9e2; max-width: 100%; font-size: 13px; }
+.attack-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 370px), 1fr)); gap: 20px; }
+.attack-result { border: 1px solid #733247; background: #160e15; padding: 24px; min-width: 0; }
+.attack-result.survived { border-color: #436f5b; background: #0d1514; }.attack-result h3 { font: 15px var(--font-mono); color: #ff8da7; }.attack-result.survived h3 { color: #a5d8be; }
+.ledger { display: flex; gap: 18px; align-items: center; margin: 22px 0; }.ledger strong { font-size: 66px; font-weight: 400; line-height: 1; color: #ff89a2; }.survived .ledger strong { color: #a5d8be; }.ledger span { color: #bda9b4; font: 11px/1.7 var(--font-mono); }
+.attack-result > p { font-size: 12px; color: #c6b0bd; line-height: 1.6; }.attack-result table { width: 100%; border-collapse: collapse; min-width: 340px; text-align: left; }.attack-result td, .attack-result th { font: 11px/1.7 var(--font-mono); padding: 12px 7px; border-bottom: 1px solid #332530; }.attack-result th { color: #b88fa1; }.attack-verdict { overflow-wrap: anywhere; }
+.policy-record .gene-change { color: #f0a2b6; border-left: 2px solid #b94868; padding-left: 10px; }
+.genome-baseline { animation: baseline-pulse 3s ease-in-out infinite; }.genome-mutating { animation: genome-mutate .8s ease-out; }.genome-rejected { animation: genome-fracture .5s ease-out; }.genome-promoted { animation: genome-settle 1s ease-out; }
+.genome-scan { animation: genome-scan 2.3s ease-in-out infinite alternate; }
+@keyframes genome-scan { to { transform: translateY(450px); opacity: .15; } }
+@keyframes baseline-pulse { 50% { opacity: .8; } }
+@keyframes genome-mutate { from { transform: scaleX(.92); opacity: .45; } to { transform: scaleX(1); opacity: 1; } }
+@keyframes genome-fracture { 20% { transform: translateX(-4px); } 45% { transform: translateX(4px); opacity: .55; } 70% { transform: translateX(-2px); } }
+@keyframes genome-settle { from { opacity: .5; } to { opacity: 1; } }
+@keyframes stage-enter { from { opacity: .5; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+#engine-note { font-size: 10px; line-height: 1.6; flex-wrap: wrap; max-width: 430px; }.description { font-size: 14px; }.eyebrow { font-size: 11px; }.execution-counts { font-size: 13px; }.run-id { font-size: 11px; }.policy-record .origin { font-size: 10px; }.policy-record strong, .policy-record .verification-count { font-size: 12px; }.bounds-note { font-size: 12px; }.specimen-top, .specimen-bottom { font-size: 10px; }
+@media (max-width: 640px) { .attack-controls label { min-width: 100%; }.playback-controls .lab-button { flex: 1; }.specimen-top, .specimen-bottom { font-size: 8px; }.attack-result { padding: 17px; }.stage-title { min-height: 50px; } }
+@media (prefers-reduced-motion: reduce) { .genome, .genome-scan, .stage-title { animation: none !important; } }
+
+.stage-explanation { font-size: 16px; line-height: 1.7; color: #ceb5c3; max-width: 950px; overflow-wrap: anywhere; }

@@ -4,7 +4,7 @@ import type { Db, Document } from 'mongodb';
 import { baseline, propose, policyKey, policySchema, MAX_GENERATIONS, type PaymentPolicy } from './policy.ts';
 import { verify, canPromote, BOUNDS, MODEL, type Verification } from './verifier.ts';
 import { engineEventSchema, type EngineEvent, type EventInput, type ProposalRejection } from './events.ts';
-import type { Candidate } from './proposer.ts';
+import type { Candidate, ProposalContext } from './proposer.ts';
 import { ProposerError, validateCandidate, type GenerationRecord, type Proposer, type RejectedProposal } from './proposer.ts';
 
 const ATTEMPTS_PER_GENERATION = 2;
@@ -31,6 +31,7 @@ export async function evolve(db: Db, runId: string, publish: (events: EngineEven
   const tried = new Set<string>();
   const history: GenerationRecord[] = [];
   const rejected: RejectedProposal[] = [];
+  let priorFailures: NonNullable<ProposalContext['priorFailures']> = [];
 
   // OBSERVE FAILURE -> AI ANALYZES -> AI PROPOSES. Rejected proposals feed the next attempt; verification
   // history feeds the next generation. Falls back to labeled deterministic mutation if the model cannot deliver.
@@ -46,7 +47,7 @@ export async function evolve(db: Db, runId: string, publish: (events: EngineEven
         let output: unknown = null, usage, stopReason: string | null = null;
         try {
           ({ output, usage, stopReason } = await proposer.propose({ generation, attempt, currentPolicy: parent,
-            counterexamples: result.counterexamples, history, rejected: [...rejected] }));
+            counterexamples: result.counterexamples, history, rejected: [...rejected], priorFailures }));
           verdict = stopReason === 'refusal' ? { ok: false, reason: 'refusal', detail: 'Model declined to propose' }
             : stopReason === 'max_tokens' ? { ok: false, reason: 'truncated', detail: 'Model output hit the token limit' }
             : validateCandidate(output, tried);
@@ -75,6 +76,17 @@ export async function evolve(db: Db, runId: string, publish: (events: EngineEven
 
   try {
     await emit([{ type: 'run.started', payload: { generator: proposer ? 'ai' : 'deterministic', model: MODEL, ...llm } }]);
+    // Optional, bounded exact retrieval. No semantic-search or memory-use claim for fallback.
+    try {
+      const previous = await collection('runs').findOne({ _id: { $ne: runId }, status: 'completed', source: { $ne: 'integration-check-test-double' } }, { sort: { startedAt: -1 } });
+      if (previous) {
+        const failures = await collection('policies').find({ runId: previous._id, status: 'rejected' }).sort({ 'policy.version': 1 }).limit(2).toArray();
+        priorFailures = failures.filter(p => p.sampleCounterexample?.execution?.trace && p.sampleCounterexample?.violations?.length).map(p => ({ sourceRunId: previous._id,
+          policy: policySchema.parse(p.policy), counterexample: p.sampleCounterexample }));
+      }
+    } catch { priorFailures = []; }
+    if (priorFailures.length) await emit([{ type: 'memory.recalled', payload: { sourceRunId: priorFailures[0].sourceRunId,
+      failureCount: priorFailures.length, usage: proposer ? 'ai_context' : 'reference' } }]);
     let proposal: Proposal = { policy: baseline(randomUUID()), origin: 'seed', rationale: 'Baseline retries ambiguous failures without deduplication.' };
     let parent: PaymentPolicy | null = null;
     for (let generation = 1; generation <= MAX_GENERATIONS; generation++) {

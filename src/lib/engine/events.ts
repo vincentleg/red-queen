@@ -14,6 +14,7 @@ const generation = z.number().int().min(1).max(4);
 export const proposalRejectionSchema = z.enum(['invalid_schema', 'duplicate', 'model_error', 'timeout', 'refusal', 'truncated', 'budget_exhausted']);
 export const engineEventSchema = z.discriminatedUnion('type', [
   event('run.started', z.object({ generator: z.enum(['deterministic', 'ai']), model: z.string(), ...llm })),
+  event('memory.recalled', z.object({ sourceRunId: z.string().uuid(), failureCount: z.number().int().min(1).max(2), usage: z.enum(['ai_context', 'reference']) })),
   event('policy.proposed', z.object({ policy: policySchema, parentPolicyId: policyId.nullable(), rationale: z.string(),
     origin: z.enum(['seed', 'ai', 'deterministic_fallback']).optional(), analysis: z.string().max(600).optional(), attempt: z.number().int().optional(), ...llm })),
   event('proposal.requested', z.object({ generation, attempt: z.number().int().min(1).max(2), provider: z.string(), llmModel: z.string() })),

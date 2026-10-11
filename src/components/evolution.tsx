@@ -7,6 +7,7 @@ import type { Counterexample } from '@/lib/engine/verifier';
 type Evidence = Counterexample & { policyId: string };
 export function useEvolution() {
   const started = useRef(false);
+  const submitting = useRef(false);
   const [events, setEvents] = useState<EngineEvent[]>([]);
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [busy, setBusy] = useState(false);
@@ -26,7 +27,8 @@ export function useEvolution() {
     return () => controller.abort();
   }, []);
   const start = async () => {
-    if (busy) return;
+    if (submitting.current) return;
+    submitting.current = true;
     started.current = true;
     setBusy(true); setError(''); setEvents([]); setEvidence([]); setRestored(false);
     let completed = false;
@@ -60,7 +62,7 @@ export function useEvolution() {
       const data = await history.json(); setEvidence(data.counterexamples ?? []);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Run unavailable.');
-    } finally { setBusy(false); }
+    } finally { submitting.current = false; setBusy(false); }
   };
   return { events, evidence, busy, error, restored, start };
 }
@@ -88,7 +90,7 @@ export function EvolutionControl({ state }: { state: EvolutionState }) {
   </div>;
 }
 
-export function EvolutionResults({ state }: { state: EvolutionState }) {
+export function EvolutionResults({ state, playback = false }: { state: EvolutionState; playback?: boolean }) {
   const [selected, setSelected] = useState(0);
   const policies = state.events.filter(e => e.type === 'policy.proposed');
   const completed = state.events.some(e => e.type === 'run.completed');
@@ -99,24 +101,29 @@ export function EvolutionResults({ state }: { state: EvolutionState }) {
   const last = state.events.at(-1);
   if (!state.events.length) return null;
   return <section className="evolution-results" aria-label="Real evolution results">
-    <div className="results-heading"><p className="eyebrow">{state.restored ? 'RESTORED FROM ATLAS' : 'LIVE EXPERIMENT RECORD'}</p><span className="mono" role="status">{completed ? 'RUN COMPLETE / PERSISTED' : state.busy ? 'EXECUTING' : 'NO COMPLETED VERDICT'}</span></div>
+    <div className="results-heading"><p className="eyebrow">{playback ? 'RECORDED EVENT PLAYBACK' : state.restored ? 'RESTORED FROM ATLAS' : 'LIVE EXPERIMENT RECORD'}</p><span className="mono" role="status">{completed ? 'RUN COMPLETE / PERSISTED' : playback ? 'VIEWING RECORDED MOMENT' : state.busy ? 'EXECUTING' : 'NO COMPLETED VERDICT'}</span></div>
     <p className="run-id mono">RUN {state.events[0].experimentId}</p>
+    {state.events.filter(e => e.type === 'memory.recalled').map(e => <p key={e.eventId} className="bounds-note">ATLAS MEMORY · {e.payload.failureCount} prior failure witnesses recalled from <a href={`/api/evolution?runId=${e.payload.sourceRunId}`} target="_blank" rel="noreferrer">experiment {e.payload.sourceRunId.slice(0, 8)} ↗</a>. {e.payload.usage === 'ai_context' ? 'Additional context for model proposals.' : 'Historical reference; this fallback uses current-run evidence.'}</p>)}
     <div className="execution-counts mono">{executions.length} SCENARIOS EXECUTED <span>/</span> {faults.length} FAULTS INJECTED <span>/</span> {state.events.filter(e => e.type === 'verification.counterexample').length} COUNTEREXAMPLES</div>
     <p className="run-id mono" role="status">{mode?.label.toUpperCase()} · {state.events.filter(e => e.type === 'proposal.rejected').length} AI ATTEMPTS REJECTED · {state.events.filter(e => e.type === 'verification.completed' && e.payload.verdict === 'rejected').length} POLICIES REJECTED BY VERIFIER</p>
     {state.busy && rejections(state.events, policies.length + 1).map(r => r.type === 'proposal.rejected' && <p key={r.eventId} className="proposal-rejected mono">GENERATION {String(r.payload.generation).padStart(2, '0')} · AI ATTEMPT {r.payload.attempt} REFUSED BEFORE VERIFICATION · {r.payload.reason.replaceAll('_', ' ').toUpperCase()} — {r.payload.detail}</p>)}
     {state.busy && last?.type === 'proposal.requested' && <p className="ai-thinking mono" role="status"><i /> {last.payload.llmModel.toUpperCase()} ANALYZING COUNTEREXAMPLES · GENERATION {String(last.payload.generation).padStart(2, '0')} · ATTEMPT {last.payload.attempt}/2</p>}
     <div className="policy-lineage">{policies.map(({ payload }) => {
+      const previous = policies.find(p => p.payload.policy.id === payload.parentPolicyId)?.payload.policy;
+      const changes = previous ? [previous.maxRetries !== payload.policy.maxRetries ? `Retries ${previous.maxRetries} → ${payload.policy.maxRetries}` : '', previous.reconcileBeforeRetry !== payload.policy.reconcileBeforeRetry ? `Reconciliation ${payload.policy.reconcileBeforeRetry ? 'enabled' : 'disabled'}` : '', previous.idempotency !== payload.policy.idempotency ? `Idempotency ${previous.idempotency} → ${payload.policy.idempotency}` : ''].filter(Boolean) : [];
       const verdict = state.events.find(e => e.type === 'verification.completed' && e.payload.policyId === payload.policy.id);
       const promoted = state.events.some(e => e.type === 'policy.promoted' && e.payload.policyId === payload.policy.id);
       return <article key={payload.policy.id} className={`policy-record ${promoted ? 'promoted' : ''}`}>
         <span className="mono">GENERATION {payload.policy.version.toString().padStart(2, '0')}</span>
         <em className={`origin mono ${payload.origin ?? 'seed'}`}>{payload.origin === 'ai' ? `AI PROPOSAL · ${payload.llmModel}${payload.attempt && payload.attempt > 1 ? ` · ATTEMPT ${payload.attempt}` : ''}` : payload.origin === 'deterministic_fallback' ? 'DETERMINISTIC FALLBACK · NOT AI' : payload.origin === 'seed' ? 'SEED POLICY' : 'DETERMINISTIC'}</em>
         <h2>{payload.policy.name}</h2>
+        {changes.length > 0 && <p className="gene-change mono">Δ {changes.join(' · ')}</p>}
         {rejections(state.events, payload.policy.version).map(r => <p key={r.eventId} className="proposal-rejected mono">{r.type === 'proposal.rejected' ? `AI ATTEMPT ${r.payload.attempt} REFUSED BEFORE VERIFICATION · ${r.payload.reason.replaceAll('_', ' ').toUpperCase()} — ${r.payload.detail}` : r.type === 'proposal.fallback' ? `FALLBACK ENGAGED · ${r.payload.reason.replaceAll('_', ' ').toUpperCase()}` : ''}</p>)}
         {payload.analysis && <p className="ai-analysis"><b className="mono">AI ANALYSIS</b> {payload.analysis}</p>}
         <p>{payload.rationale}</p><dl><div><dt>Reconcile</dt><dd>{payload.policy.reconcileBeforeRetry ? 'Before retry' : 'Disabled'}</dd></div><div><dt>Idempotency</dt><dd>{payload.policy.idempotency}</dd></div><div><dt>Retry bound</dt><dd>{payload.policy.maxRetries}</dd></div></dl>
         <strong className="mono">{promoted ? 'PROMOTED WITHIN BOUNDS' : verdict?.type === 'verification.completed' ? verdict.payload.verdict.toUpperCase() : 'VERIFYING'}</strong>
         <p className="verification-count">{verdict?.type === 'verification.completed' ? `${verdict.payload.exploredScenarios} / 54 scenarios · ${verdict.payload.counterexamples} counterexamples` : `${executions.filter(e => e.payload.policyId === payload.policy.id).length} / 54 scenarios checked`}</p>
+        {verdict && <p className="verification-count">{state.events.reduce((n, e) => n + (e.type === 'verification.counterexample' && e.payload.policyId === payload.policy.id ? e.payload.violations.length : 0), 0)} invariant violations observed</p>}
       </article>;
     })}</div>
     {current && <details className="counterexample" open><summary>INSPECT A REAL COUNTEREXAMPLE</summary>

@@ -28,7 +28,8 @@ export type GenerationRecord = { version: number; config: string; name: string; 
   counterexampleCount: number; violationCounts: Record<string, number> };
 export type RejectedProposal = { generation: number; attempt: number; reason: string; detail: string };
 export type ProposalContext = { generation: number; attempt: number; currentPolicy: PaymentPolicy;
-  counterexamples: Counterexample[]; history: GenerationRecord[]; rejected: RejectedProposal[] };
+  counterexamples: Counterexample[]; history: GenerationRecord[]; rejected: RejectedProposal[];
+  priorFailures?: { sourceRunId: string; policy: PaymentPolicy; counterexample: Counterexample }[] };
 export type ProposalResult = { output: unknown; stopReason: string | null; usage?: { inputTokens: number; outputTokens: number } };
 export type Proposer = { provider: string; model: string; propose(context: ProposalContext): Promise<ProposalResult> };
 
@@ -85,6 +86,9 @@ export function buildPrompt(context: ProposalContext): string {
     verificationHistory: context.history,
     rejectedProposals: context.rejected,
     configurationsAlreadyTried: context.history.map(h => h.config),
+    priorExperimentEvidence: context.priorFailures?.map(m => ({ sourceRunId: m.sourceRunId, policy: {
+      maxRetries: m.policy.maxRetries, reconcileBeforeRetry: m.policy.reconcileBeforeRetry, idempotency: m.policy.idempotency },
+      scenario: m.counterexample.scenario.id, violations: m.counterexample.violations, trace: compactTrace(m.counterexample) })),
   }, null, 1);
 }
 

@@ -3,13 +3,19 @@
 import { AtlasStatus } from "@/components/atlas-status";
 import { EvolutionControl, EvolutionResults, useEvolution } from "@/components/evolution";
 import { Genome } from "@/components/genome";
+import { AttackGenome } from "@/components/attack";
+import { EvolutionPlayback, usePlayback } from "@/components/playback";
 
 export default function Home() {
   const evolution = useEvolution();
-  const promoted = evolution.events.some(e => e.type === "policy.promoted");
-  const currentPolicy = evolution.events.filter(e => e.type === "policy.proposed").at(-1);
-  const currentVerdict = currentPolicy && evolution.events.find(e => e.type === "verification.completed" && e.payload.policyId === currentPolicy.payload.policy.id);
-  const genomeStatus = !currentPolicy ? "idle" : promoted ? "promoted" : currentVerdict?.type === "verification.completed" ? "rejected" : "verifying";
+  const playback = usePlayback(evolution.events, evolution.busy);
+  const visible = playback.events;
+  const promoted = visible.some(e => e.type === "policy.promoted");
+  const currentPolicy = visible.filter(e => e.type === "policy.proposed").at(-1);
+  const currentVerdict = currentPolicy && visible.find(e => e.type === "verification.completed" && e.payload.policyId === currentPolicy.payload.policy.id);
+  const verifying = currentPolicy && visible.some(e => e.type === "verification.started" && e.payload.policyId === currentPolicy.payload.policy.id);
+  const genomeStatus = !currentPolicy ? "idle" : promoted ? "promoted" : currentVerdict?.type === "verification.completed" ? (currentVerdict.payload.verdict === "rejected" ? "rejected" : "verified") : verifying ? "verifying" : currentPolicy.payload.origin === "seed" ? "baseline" : "mutating";
+  const displayed = { ...evolution, events: visible, evidence: evolution.evidence.filter(c => visible.some(e => e.type === 'verification.counterexample' && e.payload.policyId === c.policyId && e.payload.scenarioId === c.scenario.id)) };
   return (
     <main className="chamber">
       <header className="masthead">
@@ -27,15 +33,17 @@ export default function Home() {
         </div>
 
         <div className={`specimen ${evolution.busy ? "executing" : ""}`}>
-          <div className="specimen-top mono"><span>RECOVERY GENOME</span><span className="standby">{evolution.busy ? "VERIFYING" : promoted ? "POLICY PROMOTED" : "READY"}</span></div>
-          <Genome state={{ policy: currentPolicy?.payload.policy, status: genomeStatus }} />
+          <div className="specimen-top mono"><span>{playback.presenting ? 'GENOME / EVENT PLAYBACK' : 'RECOVERY GENOME'}</span><span className="standby">{genomeStatus.toUpperCase()}</span></div>
+          <Genome key={`${currentPolicy?.payload.policy.id}-${genomeStatus}`} state={{ policy: currentPolicy?.payload.policy, status: genomeStatus }} />
           <div className="specimen-bottom mono"><span>{currentPolicy ? currentPolicy.payload.policy.name.toUpperCase() : "CONCEPTUAL STRUCTURE / AWAITING RUN"}</span><span>RQ—{currentPolicy ? String(currentPolicy.payload.policy.version).padStart(2, "0") : "00"}</span></div>
         </div>
 
         <aside className="chamber-rail" aria-label="Chamber state"><span className="rail-cross">+</span><span>{evolution.busy ? "EXPERIMENT IN PROGRESS" : promoted ? "BOUNDED VERIFICATION COMPLETE" : "AWAITING EXPERIMENT"}</span><span className="rail-cross">+</span></aside>
       </section>
 
-      <EvolutionResults state={evolution} />
+      <EvolutionPlayback playback={playback} busy={evolution.busy} stored={evolution.restored} />
+      <EvolutionResults state={displayed} playback={playback.presenting} />
+      <AttackGenome key={evolution.events[0]?.experimentId ?? 'empty'} events={evolution.events} busy={evolution.busy} />
 
       <section className="protocol" aria-labelledby="protocol-title">
         <div className="protocol-intro"><p className="eyebrow" id="protocol-title">THE EVOLUTION PROTOCOL</p><p>Designed to improve.<br /><span>Required to prove.</span></p><span className="mono planned">AI PROPOSAL / BOUNDED VERIFICATION / LABELED FALLBACK</span></div>

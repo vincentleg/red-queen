@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { evolve } from '@/lib/engine/run';
 import { createProposer } from '@/lib/engine/proposer';
+import { deliverRaindropRun } from '@/lib/telemetry/raindrop';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,14 @@ export async function POST(request: Request) {
       await locks.deleteOne({ _id: 'chamber', runId });
       throw new Error('Storage unavailable');
     }
+    let evolutionFinished!: () => void;
+    const finished = new Promise<void>(resolve => { evolutionFinished = resolve; });
+    // after() keeps serverless delivery alive after the response, including disconnected clients.
+    // Wait for the engine even if the client disconnects before the run has finished.
+    if (process.env.RAINDROP_WRITE_KEY?.trim()) after(async () => {
+      await finished;
+      await deliverRaindropRun(db, runId);
+    });
     let connected = true;
     const stream = new ReadableStream({
       async start(controller) {
@@ -44,6 +53,7 @@ export async function POST(request: Request) {
             if (connected) controller.enqueue(encoder.encode(events.map(e => JSON.stringify(e)).join('\n') + '\n'));
           }, proposer);
         } finally {
+          evolutionFinished();
           await locks.deleteOne({ _id: 'chamber', runId }).catch(() => undefined);
           if (connected) controller.close();
         }

@@ -72,7 +72,11 @@ const rejections = (events: EngineEvent[], generation: number) =>
 function runMode(events: EngineEvent[]) {
   const started = events.find(e => e.type === 'run.started');
   if (started?.type !== 'run.started') return null;
-  return started.payload.generator === 'ai' ? { ai: true, label: `AI PROPOSER · ${started.payload.llmModel ?? 'MODEL'}` } : { ai: false, label: 'DETERMINISTIC CANDIDATES · AI NOT CONFIGURED' };
+  const ai = events.some(e => e.type === 'policy.proposed' && e.payload.origin === 'ai');
+  const fallback = events.some(e => e.type === 'proposal.fallback');
+  return started.payload.generator === 'ai'
+    ? { ai, label: `${ai ? 'AI PROPOSAL RECEIVED' : fallback ? 'DETERMINISTIC FALLBACK · NOT AI' : 'AI PROPOSER CONFIGURED'} · ${started.payload.llmModel ?? 'MODEL'}${ai && fallback ? ' · MIXED WITH FALLBACK' : ''}` }
+    : { ai: false, label: 'DETERMINISTIC CANDIDATES · AI NOT CONFIGURED' };
 }
 
 export function EvolutionControl({ state }: { state: EvolutionState }) {
@@ -98,6 +102,7 @@ export function EvolutionResults({ state }: { state: EvolutionState }) {
     <div className="results-heading"><p className="eyebrow">{state.restored ? 'RESTORED FROM ATLAS' : 'LIVE EXPERIMENT RECORD'}</p><span className="mono" role="status">{completed ? 'RUN COMPLETE / PERSISTED' : state.busy ? 'EXECUTING' : 'NO COMPLETED VERDICT'}</span></div>
     <p className="run-id mono">RUN {state.events[0].experimentId}</p>
     <div className="execution-counts mono">{executions.length} SCENARIOS EXECUTED <span>/</span> {faults.length} FAULTS INJECTED <span>/</span> {state.events.filter(e => e.type === 'verification.counterexample').length} COUNTEREXAMPLES</div>
+    <p className="run-id mono" role="status">{mode?.label.toUpperCase()} · {state.events.filter(e => e.type === 'proposal.rejected').length} AI ATTEMPTS REJECTED · {state.events.filter(e => e.type === 'verification.completed' && e.payload.verdict === 'rejected').length} POLICIES REJECTED BY VERIFIER</p>
     {state.busy && rejections(state.events, policies.length + 1).map(r => r.type === 'proposal.rejected' && <p key={r.eventId} className="proposal-rejected mono">GENERATION {String(r.payload.generation).padStart(2, '0')} · AI ATTEMPT {r.payload.attempt} REFUSED BEFORE VERIFICATION · {r.payload.reason.replaceAll('_', ' ').toUpperCase()} — {r.payload.detail}</p>)}
     {state.busy && last?.type === 'proposal.requested' && <p className="ai-thinking mono" role="status"><i /> {last.payload.llmModel.toUpperCase()} ANALYZING COUNTEREXAMPLES · GENERATION {String(last.payload.generation).padStart(2, '0')} · ATTEMPT {last.payload.attempt}/2</p>}
     <div className="policy-lineage">{policies.map(({ payload }) => {
@@ -111,7 +116,7 @@ export function EvolutionResults({ state }: { state: EvolutionState }) {
         {payload.analysis && <p className="ai-analysis"><b className="mono">AI ANALYSIS</b> {payload.analysis}</p>}
         <p>{payload.rationale}</p><dl><div><dt>Reconcile</dt><dd>{payload.policy.reconcileBeforeRetry ? 'Before retry' : 'Disabled'}</dd></div><div><dt>Idempotency</dt><dd>{payload.policy.idempotency}</dd></div><div><dt>Retry bound</dt><dd>{payload.policy.maxRetries}</dd></div></dl>
         <strong className="mono">{promoted ? 'PROMOTED WITHIN BOUNDS' : verdict?.type === 'verification.completed' ? verdict.payload.verdict.toUpperCase() : 'VERIFYING'}</strong>
-        {verdict?.type === 'verification.completed' && <p className="verification-count">{verdict.payload.exploredScenarios} scenarios · {verdict.payload.counterexamples} counterexamples</p>}
+        <p className="verification-count">{verdict?.type === 'verification.completed' ? `${verdict.payload.exploredScenarios} / 54 scenarios · ${verdict.payload.counterexamples} counterexamples` : `${executions.filter(e => e.payload.policyId === payload.policy.id).length} / 54 scenarios checked`}</p>
       </article>;
     })}</div>
     {current && <details className="counterexample" open><summary>INSPECT A REAL COUNTEREXAMPLE</summary>

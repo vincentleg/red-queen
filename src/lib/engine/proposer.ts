@@ -101,9 +101,55 @@ export function validateCandidate(output: unknown, tried: Set<string>):
 }
 
 export const DEFAULT_MODEL = 'claude-opus-5-5';
+export const GEMINI_MODEL = 'gemini-2.5-flash';
+
+function createGeminiProposer(apiKey: string, timeoutMs: number): Proposer {
+  return {
+    provider: 'google', model: GEMINI_MODEL,
+    async propose(context) {
+      const signal = AbortSignal.timeout(timeoutMs);
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{ role: 'user', parts: [{ text: buildPrompt(context) }] }],
+            generationConfig: {
+              maxOutputTokens: 4000, thinkingConfig: { thinkingBudget: 0 },
+              responseMimeType: 'application/json',
+              responseJsonSchema: z.toJSONSchema(outputSchema),
+            },
+          }),
+        });
+        if (!response.ok) throw new ProposerError('model_error', `Provider returned HTTP ${response.status}`);
+        const data = await response.json() as {
+          candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
+          promptFeedback?: { blockReason?: string };
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const candidate = data.candidates?.[0];
+        if (data.promptFeedback?.blockReason) return { output: null, stopReason: 'refusal' };
+        if (candidate?.finishReason === 'MAX_TOKENS') return { output: null, stopReason: 'max_tokens' };
+        if (candidate?.finishReason !== 'STOP') throw new ProposerError('model_error', 'Model did not complete a policy');
+        const text = candidate.content?.parts?.filter(p => !p.thought).map(p => p.text ?? '').join('');
+        return {
+          output: JSON.parse(text || ''), stopReason: 'end_turn',
+          usage: data.usageMetadata ? { inputTokens: data.usageMetadata.promptTokenCount ?? 0,
+            outputTokens: data.usageMetadata.candidatesTokenCount ?? 0 } : undefined,
+        };
+      } catch (error) {
+        if (signal.aborted) throw new ProposerError('timeout', 'Model call exceeded timeout');
+        if (error instanceof ProposerError) throw error;
+        throw new ProposerError('model_error', 'Model request failed or output could not be parsed');
+      }
+    },
+  };
+}
 
 // Returns null when no provider credential is configured. Never reads or exposes the key value beyond the client.
 export function createProposer(env: Record<string, string | undefined> = process.env, timeoutMs = 25000): Proposer | null {
+  if (env.GEMINI_API_KEY) return createGeminiProposer(env.GEMINI_API_KEY, timeoutMs);
   if (!env.ANTHROPIC_API_KEY) return null;
   const model = env.RED_QUEEN_MODEL || DEFAULT_MODEL;
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, timeout: timeoutMs, maxRetries: 0 });

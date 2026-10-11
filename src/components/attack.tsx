@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import { attacks, type AttackName, type ChallengeResult } from '@/lib/engine/challenge';
+import { requestChallenge } from '@/lib/challenge-client';
 import type { EngineEvent } from '@/lib/engine/events';
 
 export function AttackGenome({ events, busy }: { events: EngineEvent[]; busy: boolean }) {
@@ -20,10 +21,7 @@ export function AttackGenome({ events, busy }: { events: EngineEvent[]; busy: bo
     lock.current = true; setPending(true); setError(''); setResults([]); setReceipt('');
     try {
       const policyIds = compare && promoted ? [policies[0].payload.policy.id, promoted.payload.policy.id] : [chosen.payload.policy.id];
-      const response = await fetch('/api/challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runId, policyIds, attack }), signal: AbortSignal.timeout(20000) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Challenge unavailable');
+      const data = await requestChallenge(runId!, policyIds, attack);
       setResults(data.results); setReceipt(data.persisted ? data.challengeId : '');
     } catch (e) { setError(e instanceof Error && e.name === 'TimeoutError' ? 'Request timed out; the server may still have persisted this challenge.' : e instanceof Error ? e.message : 'Challenge unavailable'); }
     finally { lock.current = false; setPending(false); }
@@ -40,7 +38,14 @@ export function AttackGenome({ events, busy }: { events: EngineEvent[]; busy: bo
       </div>
       <p className="bounds-note">{attacks[attack].detail} Ledger reads: {attacks[attack].reconciliation}. Each challenge executes the server simulator and stores its evidence in Atlas.</p>
       {error && <p className="engine-error" role="alert">{error}</p>}
-      <div className="attack-results" aria-live="polite">{results.map(r => <article key={r.policyId} className={`attack-result ${r.verdict}`}>
+      <AttackResults results={results} />
+      {receipt && <p className="run-id">ATLAS EVIDENCE SAVED · {receipt}</p>}
+    </>}
+  </section>;
+}
+
+export function AttackResults({ results }: { results: ChallengeResult[] }) {
+  return <div className="attack-results" aria-live="polite">{results.map(r => <article key={r.policyId} className={`attack-result ${r.verdict}`}>
         <p className="eyebrow">GENERATION {String(r.generation).padStart(2, '0')} · {r.name}</p>
         <h3>{r.verdict === 'survived' ? 'ATTACK SURVIVED' : 'INVARIANT VIOLATED'}</h3>
         <div className="ledger"><strong>{r.execution.charges}</strong><span>LEDGER CHARGES<br />FOR ONE ORDER</span></div>
@@ -48,8 +53,5 @@ export function AttackGenome({ events, busy }: { events: EngineEvent[]; busy: bo
         <div className="trace-scroll"><table><thead><tr><th>Call</th><th>Fault → response</th><th>Ledger</th></tr></thead><tbody>{r.execution.trace.map(t => <tr key={t.step}><td>{t.step + 1}. {t.action}{t.key ? ' [stable key]' : ''}</td><td>{t.fault ?? '—'} → {t.response}</td><td>{t.ledgerCharges}</td></tr>)}</tbody></table></div>
         <p className="attack-verdict">{r.violations.length ? r.violations.join(' · ') : 'All checked invariants hold for this scenario.'}</p>
         <p className="bounds-note">{r.violations.length ? 'This execution is a concrete counterexample.' : 'One survived attack does not establish universal correctness.'}</p>
-      </article>)}</div>
-      {receipt && <p className="run-id">ATLAS EVIDENCE SAVED · {receipt}</p>}
-    </>}
-  </section>;
+      </article>)}</div>;
 }

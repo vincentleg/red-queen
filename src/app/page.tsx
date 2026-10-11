@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from 'react';
+import { AutoDemo } from '@/components/auto-demo';
 import { AtlasStatus } from "@/components/atlas-status";
 import { EvolutionControl, EvolutionResults, useEvolution } from "@/components/evolution";
 import { Genome } from "@/components/genome";
@@ -7,6 +9,7 @@ import { AttackGenome } from "@/components/attack";
 import { EvolutionPlayback, usePlayback } from "@/components/playback";
 
 export default function Home() {
+  const [demoOpen, setDemoOpen] = useState(false);
   const evolution = useEvolution();
   const playback = usePlayback(evolution.events, evolution.busy);
   const visible = playback.events;
@@ -30,6 +33,8 @@ export default function Home() {
           <p className="tagline">Every fix must survive<br />its own attack.</p>
           <p className="description">A self-improving AI agent harness.<br />Propose a recovery policy. Search for its breaking point.<br className="desktop-break" /> Promote only what survives bounded verification.</p>
           <EvolutionControl state={evolution} />
+          <button className="watch-demo" disabled={evolution.busy} onClick={() => setDemoOpen(true)}><span aria-hidden="true">▶</span> WATCH THE DEMO <span className="demo-duration">~2 MIN</span></button>
+          <p className="demo-invitation">The whole experiment. Guided evidence. One live attack.</p>
         </div>
 
         <div className={`specimen ${evolution.busy ? "executing" : ""}`}>
@@ -56,6 +61,7 @@ export default function Home() {
       </section>
 
       <footer><span className="footer-manifesto">NOTHING ADVANCES UNCHALLENGED.</span><span>BUILT FOR MONGODB <span className="footer-dot">/</span> SF TECH WEEK 2026</span><a href="https://github.com/vincentleg/red-queen" target="_blank" rel="noreferrer">SOURCE ↗</a></footer>
+      {demoOpen && <AutoDemo onExit={() => setDemoOpen(false)} />}
     </main>
   );
 }

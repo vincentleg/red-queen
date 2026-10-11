@@ -67,12 +67,14 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const runId = new URL(request.url).searchParams.get('runId');
+  const params = new URL(request.url).searchParams;
+  const runId = params.get('runId');
   if (runId && !/^[0-9a-f-]{36}$/i.test(runId)) return NextResponse.json({ error: 'Invalid run ID' }, { status: 400 });
   try {
     const db = await getDatabase();
     const runs = db.collection<{ _id: string; [key: string]: unknown }>('runs');
-    const run = runId ? await runs.findOne({ _id: runId }) : await runs.findOne({ source: { $ne: 'integration-check-test-double' } }, { sort: { startedAt: -1 } });
+    const run = runId ? await runs.findOne({ _id: runId }) : await runs.findOne({ source: { $ne: 'integration-check-test-double' },
+      ...(params.get('demo') === '1' ? { status: 'completed', mode: 'deterministic', generations: 3 } : {}) }, { sort: { startedAt: -1 } });
     if (!run) return NextResponse.json({ run: null }, { headers: { 'Cache-Control': 'no-store' } });
     const [policies, counterexamples, events, lineage, proposals] = await Promise.all([
       db.collection('policies').find({ runId: run._id }).sort({ 'policy.version': 1 }).toArray(),

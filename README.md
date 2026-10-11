@@ -41,3 +41,13 @@ The existing BEGIN EVOLUTION control starts a real run. The chamber shows actual
 - `GET /api/evolution?runId=<uuid>`: persisted run, policies, counterexamples, ordered events, and lineage. Omit the ID for the latest run.
 
 This is a shared hackathon chamber, not a multi-tenant service. Deploy behind the existing Vercel deployment protection when access needs restricting. Configure `MONGODB_URI` as a sensitive server-only Vercel variable for the deployment environment. Webpack is used for compatibility with the local sandbox. No new dependencies are needed for the engine.
+
+## AI-driven evolution
+
+Set `ANTHROPIC_API_KEY` (and optionally `RED_QUEEN_MODEL`, default `claude-opus-5-5`) to switch the chamber into AI mode.
+Each generation (max 4) the model receives the current policy, real counterexample traces, the verification history
+and any rejected-proposal feedback, and returns a JSON policy validated with Zod (never executed). Duplicates and
+invalid output are refused before verification (max 2 attempts per generation, 25s per call, 110s total model budget).
+Every candidate must pass all 54 bounded scenarios to be promoted. Without a key, or when the model fails, a
+deterministic mutation is used and labeled `DETERMINISTIC FALLBACK · NOT AI`. Proposals, provider/model metadata,
+verdicts, lineage and run mode are persisted in MongoDB (`proposals`, `policies`, `lineage`, `events`, `runs`).

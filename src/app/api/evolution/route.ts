@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { evolve } from '@/lib/engine/run';
+import { createProposer } from '@/lib/engine/proposer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// AI mode: up to 6 bounded model calls (25s each) inside a 110s budget, then verification.
+export const maxDuration = 180;
 
 export async function POST(request: Request) {
   const origin = request.headers.get('origin');
@@ -14,11 +16,12 @@ export async function POST(request: Request) {
   try {
     const db = await getDatabase();
     const runId = randomUUID();
+    const proposer = createProposer();
     const locks = db.collection<{ _id: string; expiresAt: Date; runId: string }>('engine_locks');
     // One global demo run at a time, with crash recovery. No unbounded paid work.
     try {
       await locks.updateOne({ _id: 'chamber', expiresAt: { $lte: new Date() } },
-        { $set: { runId, expiresAt: new Date(Date.now() + 90000) } }, { upsert: true });
+        { $set: { runId, expiresAt: new Date(Date.now() + 200000) } }, { upsert: true });
     } catch (error) {
       if (typeof error === 'object' && error && 'code' in error && error.code === 11000)
         return NextResponse.json({ error: 'Chamber busy. Retry after the current run finishes.' }, { status: 409 });
@@ -26,7 +29,8 @@ export async function POST(request: Request) {
     }
     try {
       await db.collection<{ _id: string; [key: string]: unknown }>('runs').insertOne({ _id: runId,
-        status: 'running', generator: 'deterministic', startedAt: new Date() });
+        status: 'running', generator: proposer ? 'ai' : 'deterministic', mode: proposer ? 'ai' : 'deterministic',
+        provider: proposer?.provider ?? null, model: proposer?.model ?? null, startedAt: new Date() });
     } catch {
       await locks.deleteOne({ _id: 'chamber', runId });
       throw new Error('Storage unavailable');
@@ -38,7 +42,7 @@ export async function POST(request: Request) {
         try {
           await evolve(db, runId, events => {
             if (connected) controller.enqueue(encoder.encode(events.map(e => JSON.stringify(e)).join('\n') + '\n'));
-          });
+          }, proposer);
         } finally {
           await locks.deleteOne({ _id: 'chamber', runId }).catch(() => undefined);
           if (connected) controller.close();
@@ -58,14 +62,15 @@ export async function GET(request: Request) {
   try {
     const db = await getDatabase();
     const runs = db.collection<{ _id: string; [key: string]: unknown }>('runs');
-    const run = runId ? await runs.findOne({ _id: runId }) : await runs.findOne({}, { sort: { startedAt: -1 } });
+    const run = runId ? await runs.findOne({ _id: runId }) : await runs.findOne({ source: { $ne: 'integration-check-test-double' } }, { sort: { startedAt: -1 } });
     if (!run) return NextResponse.json({ run: null }, { headers: { 'Cache-Control': 'no-store' } });
-    const [policies, counterexamples, events, lineage] = await Promise.all([
+    const [policies, counterexamples, events, lineage, proposals] = await Promise.all([
       db.collection('policies').find({ runId: run._id }).sort({ 'policy.version': 1 }).toArray(),
       db.collection('counterexamples').find({ runId: run._id }).toArray(),
       db.collection('events').find({ experimentId: run._id }).sort({ sequence: 1 }).toArray(),
       db.collection('lineage').find({ runId: run._id }).toArray(),
+      db.collection('proposals').find({ runId: run._id }).sort({ generation: 1, attempt: 1 }).toArray(),
     ]);
-    return NextResponse.json({ run, policies, counterexamples, events: events.map(({ _id, ...event }) => event), lineage }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ run, policies, counterexamples, events: events.map(({ _id, ...event }) => event), lineage, proposals }, { headers: { 'Cache-Control': 'no-store' } });
   } catch { return NextResponse.json({ error: 'Atlas history unavailable' }, { status: 503 }); }
 }

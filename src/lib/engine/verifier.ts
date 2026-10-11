@@ -17,13 +17,16 @@ export function enumerateScenarios(): Scenario[] {
 }
 
 // Independent oracle reads actual provider ledger and traces, never policy labels.
-export function checkInvariants(result: Execution): string[] {
+// Liveness: with a scenario, a policy that gives up while the provider would have accepted
+// a charge within the attempt bound is rejected (prevents "never retry" from passing).
+export function checkInvariants(result: Execution, scenario?: Scenario): string[] {
   const violations: string[] = [];
   if (result.charges > 1) violations.push('at_most_one_charge');
   if (result.outcome === 'succeeded' && result.charges !== 1) violations.push('success_requires_exactly_one_charge');
   if (result.steps > BOUNDS.maxSteps || result.attempts > BOUNDS.maxAttempts) violations.push('bounded_termination');
   const evidenceOfSuccess = result.trace.some(t => t.response === 'acknowledged' || t.response === 'found');
   if (evidenceOfSuccess && result.outcome !== 'succeeded') violations.push('acknowledged_payment_completes');
+  if (scenario?.faults.slice(0, BOUNDS.maxAttempts).includes('ok') && result.outcome !== 'succeeded') violations.push('recovers_when_provider_available');
   return violations;
 }
 
@@ -31,7 +34,7 @@ export function verify(input: PaymentPolicy): Verification {
   const policy = policySchema.parse(input);
   const executions = enumerateScenarios().map(scenario => ({ scenario, execution: execute(policy, scenario) }));
   const counterexamples = executions.flatMap(({ scenario, execution }) => {
-    const violations = checkInvariants(execution);
+    const violations = checkInvariants(execution, scenario);
     return violations.length ? [{ scenario, execution, violations }] : [];
   });
   return { verdict: counterexamples.length ? 'rejected' : 'passed', explored: executions.length,
@@ -42,5 +45,5 @@ export function canPromote(result: Verification): boolean {
   return result.verdict === 'passed' && result.explored === BOUNDS.scenarioCount
     && result.executions.length === BOUNDS.scenarioCount && result.counterexamples.length === 0
     && new Set(result.executions.map(x => x.scenario.id)).size === BOUNDS.scenarioCount
-    && result.executions.every(x => checkInvariants(x.execution).length === 0);
+    && result.executions.every(x => checkInvariants(x.execution, x.scenario).length === 0);
 }

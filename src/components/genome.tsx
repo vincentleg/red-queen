@@ -7,7 +7,7 @@ export function Genome() {
   const strand = (key: "a" | "b") => points.map((p, i) => `${i ? "L" : "M"}${p[key]},${p.y}`).join(" ");
   return (
     <svg className="genome" viewBox="0 0 600 610" role="img" aria-labelledby="genome-title">
-      <title id="genome-title">Dormant double helix, a conceptual recovery-policy genome. No evolution has run.</title>
+      <title id="genome-title">Conceptual recovery-policy genome. The adjacent labels show actual engine state; this structure is an illustration.</title>
       <defs>
         <radialGradient id="aura"><stop stopColor="#ec2448" stopOpacity=".18" /><stop offset="1" stopColor="#ec2448" stopOpacity="0" /></radialGradient>
         <linearGradient id="strand" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#62172d" /><stop offset=".45" stopColor="#ff6476" /><stop offset="1" stopColor="#69152b" /></linearGradient>

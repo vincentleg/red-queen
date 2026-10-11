@@ -14,7 +14,7 @@ export async function GET() {
       {
         status: "ok",
         database: "connected",
-        engine: "unavailable",
+        engine: "ready",
         latencyMs: Math.round(performance.now() - started),
         checkedAt: new Date().toISOString(),
       },

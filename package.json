@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "check:mongodb": "node --env-file=.env.local scripts/check-mongodb.mjs"
+    "check:mongodb": "node --env-file=.env.local scripts/check-mongodb.mjs",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "check:evolution": "node --env-file=.env.local --conditions=react-server --experimental-strip-types scripts/check-evolution.mjs"
   },
   "dependencies": {
     "next": "16.4.0",

@@ -13,7 +13,7 @@ const connection = globalThis as typeof globalThis & {
 
 export async function getDatabase(): Promise<Db> {
   const config = environmentSchema.safeParse(process.env);
-  if (!config.success) throw new Error("Database configuration unavailable");
+  if (!config.success) throw new Error("Database configuration unavailable", { cause: { code: "CONFIGURATION" } });
 
   if (!connection.redQueenMongo) {
     const client = new MongoClient(config.data.MONGODB_URI, {
@@ -22,10 +22,10 @@ export async function getDatabase(): Promise<Db> {
       connectTimeoutMS: 5000,
       socketTimeoutMS: 5000,
     });
-    connection.redQueenMongo = client.connect().catch(async () => {
+    connection.redQueenMongo = client.connect().catch(async (cause: unknown) => {
       connection.redQueenMongo = undefined;
       await client.close().catch(() => undefined);
-      throw new Error("Database connection unavailable");
+      throw new Error("Database connection unavailable", { cause });
     });
   }
 
